@@ -2,36 +2,56 @@ import pandas as pd
 import numpy as np
 from .indicators import EMA, RSI, MACD, bollinger_bands, ATR, vwap
 
-def supertrend(df, period=10, multiplier=3.0):
+import pandas as pd
+import numpy as np
+
+def supertrend(df, period=10, multiplier=3):
+    """
+    Calculates the Supertrend indicator for given OHLC data.
+    Returns a tuple of (supertrend, direction)
+    """
     hl2 = (df['High'] + df['Low']) / 2
-    atrv = ATR(df, period)
-    upperband = hl2 + (multiplier * atrv)
-    lowerband = hl2 - (multiplier * atrv)
+    atr = df['High'].combine(df['Low'], max) - df['Low'].combine(df['High'], min)
+    atr = atr.ewm(span=period, adjust=False).mean()
+
+    upperband = hl2 + (multiplier * atr)
+    lowerband = hl2 - (multiplier * atr)
 
     final_upperband = upperband.copy()
     final_lowerband = lowerband.copy()
-    supertrend = pd.Series(index=df.index)
-    direction = pd.Series(1, index=df.index)
 
+    # Ensure 1D series, not DataFrames
     for i in range(1, len(df)):
-        if df['Close'].iat[i-1] <= final_upperband.iat[i-1]:
-            final_upperband.iat[i] = min(upperband.iat[i], final_upperband.iat[i-1])
+        if df['Close'].iloc[i-1] > final_upperband.iloc[i-1]:
+            final_upperband.iloc[i] = upperband.iloc[i]
         else:
-            final_upperband.iat[i] = upperband.iat[i]
+            final_upperband.iloc[i] = min(upperband.iloc[i], final_upperband.iloc[i-1])
 
-        if df['Close'].iat[i-1] >= final_lowerband.iat[i-1]:
-            final_lowerband.iat[i] = max(lowerband.iat[i], final_lowerband.iat[i-1])
+        if df['Close'].iloc[i-1] < final_lowerband.iloc[i-1]:
+            final_lowerband.iloc[i] = lowerband.iloc[i]
         else:
-            final_lowerband.iat[i] = lowerband.iat[i]
+            final_lowerband.iloc[i] = max(lowerband.iloc[i], final_lowerband.iloc[i-1])
 
-        if df['Close'].iat[i] <= final_upperband.iat[i]:
-            supertrend.iat[i] = final_upperband.iat[i]
-            direction.iat[i] = -1
+    supertrend = pd.Series(index=df.index)
+    direction = pd.Series(index=df.index)
+
+    for i in range(len(df)):
+        if df['Close'].iloc[i] > final_upperband.iloc[i]:
+            supertrend.iloc[i] = final_lowerband.iloc[i]
+            direction.iloc[i] = 1
+        elif df['Close'].iloc[i] < final_lowerband.iloc[i]:
+            supertrend.iloc[i] = final_upperband.iloc[i]
+            direction.iloc[i] = -1
         else:
-            supertrend.iat[i] = final_lowerband.iat[i]
-            direction.iat[i] = 1
+            if i == 0:
+                supertrend.iloc[i] = final_upperband.iloc[i]
+                direction.iloc[i] = 1
+            else:
+                supertrend.iloc[i] = supertrend.iloc[i-1]
+                direction.iloc[i] = direction.iloc[i-1]
 
     return supertrend, direction
+
 
 def generate_signals(df, params):
     df = df.copy()
