@@ -1,5 +1,10 @@
 import streamlit as st
 import yfinance as yf
+import pandas as pd               # ← Add this import
+import plotly.graph_objects as go
+from utils.signal_logic import generate_signals
+import streamlit as st
+import yfinance as yf
 import plotly.graph_objects as go
 from utils.signal_logic import generate_signals
 
