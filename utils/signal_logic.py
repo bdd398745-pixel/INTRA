@@ -16,7 +16,6 @@ def ATR(df, period=14):
     atr = tr.rolling(period, min_periods=1).mean()
     return atr
 
-# ---------------- Supertrend ---------------- #
 def supertrend(df, period=10, multiplier=3):
     """
     Supertrend calculation
@@ -33,19 +32,21 @@ def supertrend(df, period=10, multiplier=3):
     directions = []
 
     for i in range(len(df)):
+        # Convert to float scalars explicitly
+        curr_upper = float(upperband.iat[i])
+        curr_lower = float(lowerband.iat[i])
+        close = float(df['Close'].iat[i])
+
         if i == 0:
-            st_values.append(upperband.iloc[i])
-            directions.append(1)  # initial direction up
+            st_values.append(curr_upper)
+            directions.append(1)
             continue
 
         prev_direction = directions[i - 1]
-        prev_upper = float(upperband.iloc[i - 1])
-        prev_lower = float(lowerband.iloc[i - 1])
-        curr_upper = float(upperband.iloc[i])
-        curr_lower = float(lowerband.iloc[i])
-        close = float(df['Close'].iloc[i])
+        prev_upper = float(upperband.iat[i - 1])
+        prev_lower = float(lowerband.iat[i - 1])
 
-        # Adjust bands based on previous direction
+        # Adjust bands
         if prev_direction == 1:
             upper = min(curr_upper, prev_upper)
             lower = curr_lower
@@ -67,6 +68,7 @@ def supertrend(df, period=10, multiplier=3):
         directions.append(direction)
 
     return pd.Series(st_values, index=df.index), pd.Series(directions, index=df.index)
+
 
 # ---------------- RSI ---------------- #
 def RSI(df, period=14):
