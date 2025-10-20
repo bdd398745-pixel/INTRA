@@ -1,30 +1,21 @@
-# signal_logic.py
-
 import pandas as pd
 import numpy as np
 
-# ---------------- ATR ---------------- #
+# ATR Calculation
 def ATR(df, period=14):
-    """
-    Average True Range (ATR) calculation
-    """
-    high_low = df['High'] - df['Low']
-    high_close = np.abs(df['High'] - df['Close'].shift(1))
-    low_close = np.abs(df['Low'] - df['Close'].shift(1))
-    
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    df = df.copy()
+    df['H-L'] = df['High'] - df['Low']
+    df['H-C'] = abs(df['High'] - df['Close'].shift(1))
+    df['L-C'] = abs(df['Low'] - df['Close'].shift(1))
+    tr = df[['H-L', 'H-C', 'L-C']].max(axis=1)
     atr = tr.rolling(period, min_periods=1).mean()
     return atr
 
+# Supertrend Calculation
 def supertrend(df, period=10, multiplier=3):
-    """
-    Supertrend calculation
-    Returns: supertrend values, direction (1=up, -1=down)
-    """
     df = df.copy()
-    atr = ATR(df, period)
     hl2 = (df['High'] + df['Low']) / 2
-
+    atr = ATR(df, period)
     upperband = hl2 + multiplier * atr
     lowerband = hl2 - multiplier * atr
 
@@ -32,99 +23,83 @@ def supertrend(df, period=10, multiplier=3):
     directions = []
 
     for i in range(len(df)):
-        # Convert to float scalars explicitly
-        curr_upper = float(upperband.iat[i])
-        curr_lower = float(lowerband.iat[i])
-        close = float(df['Close'].iat[i])
-
         if i == 0:
-            st_values.append(curr_upper)
+            st_values.append(float(upperband.iloc[i]))
             directions.append(1)
             continue
 
-        prev_direction = directions[i - 1]
-        prev_upper = float(upperband.iat[i - 1])
-        prev_lower = float(lowerband.iat[i - 1])
+        prev_st = st_values[-1]
+        prev_direction = directions[-1]
+        curr_upper = float(upperband.iloc[i])
+        curr_lower = float(lowerband.iloc[i])
+        close = float(df['Close'].iloc[i])
 
-        # Adjust bands
         if prev_direction == 1:
-            upper = min(curr_upper, prev_upper)
-            lower = curr_lower
+            curr_upper = min(curr_upper, prev_st)
         else:
-            lower = max(curr_lower, prev_lower)
-            upper = curr_upper
+            curr_lower = max(curr_lower, prev_st)
 
-        # Determine current direction
-        if close > upper:
+        if close > curr_upper:
             direction = 1
-        elif close < lower:
+        elif close < curr_lower:
             direction = -1
         else:
             direction = prev_direction
 
-        st_val = lower if direction == 1 else upper
+        st_value = curr_lower if direction == -1 else curr_upper
 
-        st_values.append(st_val)
+        st_values.append(st_value)
         directions.append(direction)
 
-    return pd.Series(st_values, index=df.index), pd.Series(directions, index=df.index)
+    df['Supertrend'] = st_values
+    df['ST_dir'] = directions
+    return df['Supertrend'], df['ST_dir']
 
-
-# ---------------- RSI ---------------- #
+# RSI Calculation
 def RSI(df, period=14):
-    """
-    Relative Strength Index
-    """
     delta = df['Close'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-
     avg_gain = gain.rolling(period, min_periods=1).mean()
     avg_loss = loss.rolling(period, min_periods=1).mean()
-
-    rs = avg_gain / (avg_loss + 1e-10)  # avoid division by zero
+    rs = avg_gain / avg_loss.replace(0, 1e-10)
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# ---------------- MACD ---------------- #
-def MACD(df, fast_period=12, slow_period=26, signal_period=9):
-    """
-    MACD and Signal line
-    """
-    ema_fast = df['Close'].ewm(span=fast_period, adjust=False).mean()
-    ema_slow = df['Close'].ewm(span=slow_period, adjust=False).mean()
+# MACD Calculation
+def MACD(df, fast=12, slow=26, signal=9):
+    exp1 = df['Close'].ewm(span=fast, adjust=False).mean()
+    exp2 = df['Close'].ewm(span=slow, adjust=False).mean()
+    macd = exp1 - exp2
+    macd_signal = macd.ewm(span=signal, adjust=False).mean()
+    return macd, macd_signal
 
-    macd = ema_fast - ema_slow
-    signal = macd.ewm(span=signal_period, adjust=False).mean()
-    return macd, signal
-
-# ---------------- Generate Signals ---------------- #
-def generate_signals(df, params=None):
-    """
-    Generates all indicators and buy/sell signals
-    """
-    if params is None:
-        params = {}
-
+# Generate Signals
+def generate_signals(df, params):
     df = df.copy()
-
-    # ATR
-    df['ATR'] = ATR(df, period=params.get('atr_period', 14))
-
-    # Supertrend
+    df['ATR'] = ATR(df, period=params.get('atr_period',14))
     df['Supertrend'], df['ST_dir'] = supertrend(
-        df,
-        period=params.get('st_period', 10),
-        multiplier=params.get('st_multiplier', 3)
+        df, period=params.get('st_period',10), multiplier=params.get('st_multiplier',3)
     )
-
-    # RSI
-    df['RSI'] = RSI(df, period=params.get('rsi_period', 14))
-
-    # MACD
+    df['RSI'] = RSI(df, period=params.get('rsi_period',14))
     df['MACD'], df['MACD_signal'] = MACD(df)
 
-    # Buy/Sell signals
-    df['Signal'] = np.where(df['ST_dir'] == 1, 'BUY', 'SELL')
+    df['Signal'] = ""
+    for i in range(len(df)):
+        if df['ST_dir'].iloc[i] == 1:
+            df.at[i, 'Signal'] = 'BUY'
+        elif df['ST_dir'].iloc[i] == -1:
+            df.at[i, 'Signal'] = 'SELL'
 
-    return df, df[['Close', 'Signal']]
+    # ATR-based StopLoss and Target
+    df['StopLoss'] = np.where(
+        df['Signal']=='BUY', df['Close'] - 1.5*df['ATR'],
+        np.where(df['Signal']=='SELL', df['Close'] + 1.5*df['ATR'], np.nan)
+    )
+    df['Target'] = np.where(
+        df['Signal']=='BUY', df['Close'] + 3*df['ATR'],
+        np.where(df['Signal']=='SELL', df['Close'] - 3*df['ATR'], np.nan)
+    )
+
+    signals_df = df[['Close','Signal','StopLoss','Target','RSI','MACD','MACD_signal']]
+    return df, signals_df
