@@ -1,63 +1,50 @@
 import streamlit as st
-import pandas as pd
 import yfinance as yf
 import plotly.graph_objects as go
 from utils.signal_logic import generate_signals
 
-st.set_page_config(page_title="Intraday Signal App", layout="wide")
+# Streamlit App
+st.title("Intraday Trading Signals")
 
-st.title("📈 Intraday Stock Signal Dashboard")
-
-# Sidebar parameters
-st.sidebar.header("⚙️ Settings")
-
-ticker = st.sidebar.text_input("Enter Stock Symbol (e.g. RELIANCE.NS)", "RELIANCE.NS")
-interval = st.sidebar.selectbox("Select Interval", ["1m", "5m", "15m", "1h"])
-st.sidebar.markdown("---")
-
+# Sidebar inputs
+ticker = st.sidebar.text_input("Ticker", value="AAPL")
+interval = st.sidebar.selectbox("Interval", ["1m", "5m", "15m", "30m", "60m"])
 params = {
-    'atr_period': st.sidebar.slider("ATR Period", 5, 20, 10),
-    'atr_multiplier': st.sidebar.slider("ATR Multiplier", 1.0, 5.0, 3.0),
-    'st_period': st.sidebar.slider("Supertrend Period", 5, 20, 10),
-    'st_multiplier': st.sidebar.slider("Supertrend Multiplier", 1.0, 5.0, 3.0)
+    "atr_period": st.sidebar.number_input("ATR Period", min_value=1, value=14),
+    "st_period": st.sidebar.number_input("Supertrend Period", min_value=1, value=10),
+    "st_multiplier": st.sidebar.number_input("Supertrend Multiplier", min_value=1.0, value=3.0),
+    "rsi_period": st.sidebar.number_input("RSI Period", min_value=1, value=14)
 }
 
-st.sidebar.markdown("---")
+# Download intraday data
+df = yf.download(ticker, period="1d", interval=interval, progress=False)
+if isinstance(df.columns, pd.MultiIndex):
+    df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
 
-if st.sidebar.button("📊 Generate Signals"):
-    with st.spinner("Fetching data..."):
-        df = yf.download(ticker, period="1d", interval=interval, progress=False)
+# Keep only necessary columns and convert to float
+df = df[['Open','High','Low','Close','Volume']].astype(float)
 
-    if df.empty:
-        st.error("No intraday data found. Try another stock or interval.")
-    else:
-        analyzed_df, signals_df = generate_signals(df, params)
+if df.empty:
+    st.error("No intraday data found. Try another stock or interval.")
+else:
+    # Generate signals
+    analyzed_df, signals_df = generate_signals(df, params)
 
-        # Plot Candlestick
-        fig = go.Figure(data=[go.Candlestick(
-            x=analyzed_df.index,
-            open=analyzed_df['Open'],
-            high=analyzed_df['High'],
-            low=analyzed_df['Low'],
-            close=analyzed_df['Close'],
-            name='Candlestick'
-        )])
+    # Plot Candlestick
+    fig = go.Figure(data=[go.Candlestick(
+        x=analyzed_df.index,
+        open=analyzed_df['Open'],
+        high=analyzed_df['High'],
+        low=analyzed_df['Low'],
+        close=analyzed_df['Close'],
+        name=ticker
+    )])
 
-        # Add Buy/Sell markers
-        buys = analyzed_df[analyzed_df['Signal'] == 'BUY']
-        sells = analyzed_df[analyzed_df['Signal'] == 'SELL']
+    # Overlay Supertrend
+    fig.add_trace(go.Scatter(
+        x=analyzed_df.index, y=analyzed_df['Supertrend'], 
+        line=dict(color='blue', width=1), name='Supertrend'
+    ))
 
-        fig.add_trace(go.Scatter(x=buys.index, y=buys['Close'], mode='markers',
-                                 marker=dict(symbol='triangle-up', color='green', size=10),
-                                 name='BUY'))
-        fig.add_trace(go.Scatter(x=sells.index, y=sells['Close'], mode='markers',
-                                 marker=dict(symbol='triangle-down', color='red', size=10),
-                                 name='SELL'))
-
-        fig.update_layout(title=f"{ticker} - {interval} Chart",
-                          xaxis_title="Time", yaxis_title="Price",
-                          xaxis_rangeslider_visible=False, template="plotly_dark")
-
-        st.plotly_chart(fig, use_container_width=True)
-        st.subheader("📋 Latest Signals")
-        st.dataframe(signals_df.tail(10))
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(signals_df)
