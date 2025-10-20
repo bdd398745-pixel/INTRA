@@ -1,75 +1,51 @@
+
 import streamlit as st
 import yfinance as yf
-import plotly.graph_objects as go
 import pandas as pd
+import plotly.graph_objects as go
 from utils.signal_logic import generate_signals
 
-st.set_page_config(page_title="Intraday Stock Signals", layout="wide")
+st.set_page_config(page_title="Intraday Stock Signal App", layout="wide")
 
-st.title("📈 Intraday Buy/Sell Signal App")
-st.caption("For educational use only — not financial advice.")
+st.title("📈 Intraday Buy/Sell Signal App (India)")
 
-ticker = st.text_input("Enter Stock Symbol (NSE, e.g., TCS.NS)", "TCS.NS")
-
-interval = st.selectbox("Select Interval", ["5m", "15m", "30m", "60m"])
-params = {"st_period": 10, "st_multiplier": 3}
+# User input
+symbol = st.text_input("Enter Stock Symbol (e.g. RELIANCE.NS):", "RELIANCE.NS")
+interval = st.selectbox("Select Interval:", ["1d", "1h", "15m", "5m", "1m"], index=2)
 
 if st.button("Get Signals"):
-    with st.spinner("Fetching intraday data..."):
-        df = yf.download(ticker, period="1d", interval=interval, progress=False)
-
+    df = yf.download(symbol, period="7d", interval=interval)
     if df.empty:
-        st.error("No intraday data found. Try another stock or interval.")
+        st.error("No data found. Try again with a valid symbol or smaller interval.")
     else:
-        analyzed_df, signals_df = generate_signals(df, params)
+        df = generate_signals(df)
 
-        # ---------- Plot ----------
-        fig = go.Figure()
+        # Plot candlestick + signals
+        fig = go.Figure(data=[go.Candlestick(x=df.index,
+                                             open=df['Open'],
+                                             high=df['High'],
+                                             low=df['Low'],
+                                             close=df['Close'],
+                                             name='Candlestick')])
+        
+        # Add buy/sell markers
+        buys = df[df['Signal'] == 'BUY']
+        sells = df[df['Signal'] == 'SELL']
+        fig.add_trace(go.Scatter(x=buys.index, y=buys['Close'], mode='markers',
+                                 marker=dict(symbol='triangle-up', color='green', size=10),
+                                 name='Buy Signal'))
+        fig.add_trace(go.Scatter(x=sells.index, y=sells['Close'], mode='markers',
+                                 marker=dict(symbol='triangle-down', color='red', size=10),
+                                 name='Sell Signal'))
 
-        fig.add_trace(go.Candlestick(
-            x=analyzed_df.index,
-            open=analyzed_df['Open'],
-            high=analyzed_df['High'],
-            low=analyzed_df['Low'],
-            close=analyzed_df['Close'],
-            name='Price'
-        ))
-
-        fig.add_trace(go.Scatter(
-            x=analyzed_df.index,
-            y=analyzed_df['Supertrend'],
-            mode='lines',
-            line=dict(color='orange', width=1.5),
-            name='Supertrend'
-        ))
-
-        # BUY/SELL markers
-        buys = analyzed_df[analyzed_df['Buy_Signal']]
-        sells = analyzed_df[analyzed_df['Sell_Signal']]
-
-        fig.add_trace(go.Scatter(
-            x=buys.index, y=buys['Close'],
-            mode='markers', name='BUY',
-            marker=dict(color='green', size=10, symbol='triangle-up')
-        ))
-
-        fig.add_trace(go.Scatter(
-            x=sells.index, y=sells['Close'],
-            mode='markers', name='SELL',
-            marker=dict(color='red', size=10, symbol='triangle-down')
-        ))
-
-        fig.update_layout(
-            title=f"Intraday Signals for {ticker}",
-            xaxis_title="Time",
-            yaxis_title="Price (INR)",
-            xaxis_rangeslider_visible=False,
-            template="plotly_dark",
-            height=700
-        )
+        fig.update_layout(title=f"{symbol} - Intraday Chart with Buy/Sell Signals",
+                          xaxis_title="Time",
+                          yaxis_title="Price",
+                          xaxis_rangeslider_visible=False)
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # ---------- Signal Table ----------
-        st.subheader("📊 Signal Summary")
-        st.dataframe(signals_df.style.format({"Entry": "{:.2f}", "Stop_Loss": "{:.2f}", "Target": "{:.2f}", "RSI": "{:.2f}"}))
+        # Signal table
+        signal_table = df[df['Signal'].isin(['BUY', 'SELL'])][['Signal', 'Close', 'StopLoss', 'Target']]
+        st.subheader("📋 Trade Recommendations")
+        st.dataframe(signal_table)
