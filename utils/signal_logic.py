@@ -14,46 +14,51 @@ def ATR(df, n=14):
     return df['ATR']
 
 
+
+
+# ===== ATR Function =====
+def ATR(df, n=14):
+    high_low = df['High'] - df['Low']
+    high_close = abs(df['High'] - df['Close'].shift(1))
+    low_close = abs(df['Low'] - df['Close'].shift(1))
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    atr = tr.rolling(n, min_periods=1).mean()
+    return atr
+
+# ===== Supertrend Function =====
 def supertrend(df, period=10, multiplier=3):
-    """Calculate Supertrend indicator."""
     df = df.copy()
+    atr = ATR(df, period)
     hl2 = (df['High'] + df['Low']) / 2
-    atr = ATR(df, n=period)
 
-    upperband = hl2 + (multiplier * atr)
-    lowerband = hl2 - (multiplier * atr)
+    upperband = hl2 + multiplier * atr
+    lowerband = hl2 - multiplier * atr
 
-    final_upperband = pd.Series(index=df.index)
-    final_lowerband = pd.Series(index=df.index)
+    supertrend = pd.Series(index=df.index)
     direction = pd.Series(index=df.index)
 
     for i in range(len(df)):
         if i == 0:
-            final_upperband.iloc[i] = upperband.iloc[i]
-            final_lowerband.iloc[i] = lowerband.iloc[i]
+            supertrend.iloc[i] = upperband.iloc[i]  # first value
             direction.iloc[i] = 1
         else:
-            # Ensure all Series are aligned by index
-            final_upperband.iloc[i] = (
-                upperband.iloc[i] if (upperband.iloc[i] < final_upperband.iloc[i-1]) or (df['Close'].iloc[i-1] > final_upperband.iloc[i-1])
-                else final_upperband.iloc[i-1]
-            )
+            # Final bands
+            upperband.iloc[i] = min(upperband.iloc[i], upperband.iloc[i-1]) if df['Close'].iloc[i-1] <= upperband.iloc[i-1] else upperband.iloc[i]
+            lowerband.iloc[i] = max(lowerband.iloc[i], lowerband.iloc[i-1]) if df['Close'].iloc[i-1] >= lowerband.iloc[i-1] else lowerband.iloc[i]
 
-            final_lowerband.iloc[i] = (
-                lowerband.iloc[i] if (lowerband.iloc[i] > final_lowerband.iloc[i-1]) or (df['Close'].iloc[i-1] < final_lowerband.iloc[i-1])
-                else final_lowerband.iloc[i-1]
-            )
-
-            # Set trend direction
-            if df['Close'].iloc[i-1] > final_upperband.iloc[i-1]:
+            # Trend direction
+            if df['Close'].iloc[i] > upperband.iloc[i-1]:
                 direction.iloc[i] = 1
-            elif df['Close'].iloc[i-1] < final_lowerband.iloc[i-1]:
+            elif df['Close'].iloc[i] < lowerband.iloc[i-1]:
                 direction.iloc[i] = -1
             else:
                 direction.iloc[i] = direction.iloc[i-1]
 
-    supertrend = np.where(direction == 1, final_lowerband, final_upperband)
-    return pd.Series(supertrend, index=df.index), pd.Series(direction, index=df.index)
+            # Supertrend value
+            supertrend.iloc[i] = lowerband.iloc[i] if direction.iloc[i] == 1 else upperband.iloc[i]
+
+    return supertrend, direction
+
 
 
 def RSI(df, period=14):
