@@ -1,21 +1,6 @@
 import pandas as pd
 import numpy as np
 
-# ========== Helper Functions ========== #
-
-def ATR(df, n=14):
-    """Calculate Average True Range (ATR)."""
-    df = df.copy()
-    df['H-L'] = df['High'] - df['Low']
-    df['H-PC'] = abs(df['High'] - df['Close'].shift(1))
-    df['L-PC'] = abs(df['Low'] - df['Close'].shift(1))
-    df['TR'] = df[['H-L', 'H-PC', 'L-PC']].max(axis=1)
-    df['ATR'] = df['TR'].rolling(window=n).mean()
-    return df['ATR']
-
-
-
-
 # ===== ATR Function =====
 def ATR(df, n=14):
     high_low = df['High'] - df['Low']
@@ -29,35 +14,52 @@ def ATR(df, n=14):
 def supertrend(df, period=10, multiplier=3):
     df = df.copy()
     atr = ATR(df, period)
+
     hl2 = (df['High'] + df['Low']) / 2
 
     upperband = hl2 + multiplier * atr
     lowerband = hl2 - multiplier * atr
 
-    supertrend = pd.Series(index=df.index)
-    direction = pd.Series(index=df.index)
+    supertrend_values = []  # store supertrend values
+    directions = []         # store trend direction
 
     for i in range(len(df)):
         if i == 0:
-            supertrend.iloc[i] = upperband.iloc[i]  # first value
-            direction.iloc[i] = 1
+            supertrend_values.append(upperband.iloc[i])
+            directions.append(1)  # initial trend
         else:
-            # Final bands
-            upperband.iloc[i] = min(upperband.iloc[i], upperband.iloc[i-1]) if df['Close'].iloc[i-1] <= upperband.iloc[i-1] else upperband.iloc[i]
-            lowerband.iloc[i] = max(lowerband.iloc[i], lowerband.iloc[i-1]) if df['Close'].iloc[i-1] >= lowerband.iloc[i-1] else lowerband.iloc[i]
-
-            # Trend direction
-            if df['Close'].iloc[i] > upperband.iloc[i-1]:
-                direction.iloc[i] = 1
-            elif df['Close'].iloc[i] < lowerband.iloc[i-1]:
-                direction.iloc[i] = -1
+            # Adjust upper/lower bands
+            if directions[i-1] == 1:
+                upperband_i = min(upperband.iloc[i], upperband.iloc[i-1])
             else:
-                direction.iloc[i] = direction.iloc[i-1]
+                upperband_i = upperband.iloc[i]
 
-            # Supertrend value
-            supertrend.iloc[i] = lowerband.iloc[i] if direction.iloc[i] == 1 else upperband.iloc[i]
+            if directions[i-1] == -1:
+                lowerband_i = max(lowerband.iloc[i], lowerband.iloc[i-1])
+            else:
+                lowerband_i = lowerband.iloc[i]
 
-    return supertrend, direction
+            # Determine trend direction
+            if df['Close'].iloc[i] > upperband_i:
+                direction = 1
+            elif df['Close'].iloc[i] < lowerband_i:
+                direction = -1
+            else:
+                direction = directions[i-1]
+
+            # Supertrend value based on trend
+            supertrend_val = lowerband_i if direction == 1 else upperband_i
+
+            # Append to lists
+            supertrend_values.append(supertrend_val)
+            directions.append(direction)
+
+    # Convert lists to Series
+    supertrend_series = pd.Series(supertrend_values, index=df.index)
+    direction_series = pd.Series(directions, index=df.index)
+
+    return supertrend_series, direction_series
+
 
 
 
