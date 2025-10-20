@@ -1,51 +1,63 @@
-
 import streamlit as st
-import yfinance as yf
 import pandas as pd
+import yfinance as yf
 import plotly.graph_objects as go
 from utils.signal_logic import generate_signals
 
-st.set_page_config(page_title="Intraday Stock Signal App", layout="wide")
+st.set_page_config(page_title="Intraday Signal App", layout="wide")
 
-st.title("📈 Intraday Buy/Sell Signal App (India)")
+st.title("📈 Intraday Stock Signal Dashboard")
 
-# User input
-symbol = st.text_input("Enter Stock Symbol (e.g. RELIANCE.NS):", "RELIANCE.NS")
-interval = st.selectbox("Select Interval:", ["1d", "1h", "15m", "5m", "1m"], index=2)
+# Sidebar parameters
+st.sidebar.header("⚙️ Settings")
 
-if st.button("Get Signals"):
-    df = yf.download(symbol, period="7d", interval=interval)
+ticker = st.sidebar.text_input("Enter Stock Symbol (e.g. RELIANCE.NS)", "RELIANCE.NS")
+interval = st.sidebar.selectbox("Select Interval", ["1m", "5m", "15m", "1h"])
+st.sidebar.markdown("---")
+
+params = {
+    'atr_period': st.sidebar.slider("ATR Period", 5, 20, 10),
+    'atr_multiplier': st.sidebar.slider("ATR Multiplier", 1.0, 5.0, 3.0),
+    'st_period': st.sidebar.slider("Supertrend Period", 5, 20, 10),
+    'st_multiplier': st.sidebar.slider("Supertrend Multiplier", 1.0, 5.0, 3.0)
+}
+
+st.sidebar.markdown("---")
+
+if st.sidebar.button("📊 Generate Signals"):
+    with st.spinner("Fetching data..."):
+        df = yf.download(ticker, period="1d", interval=interval, progress=False)
+
     if df.empty:
-        st.error("No data found. Try again with a valid symbol or smaller interval.")
+        st.error("No intraday data found. Try another stock or interval.")
     else:
-        df = generate_signals(df)
+        analyzed_df, signals_df = generate_signals(df, params)
 
-        # Plot candlestick + signals
-        fig = go.Figure(data=[go.Candlestick(x=df.index,
-                                             open=df['Open'],
-                                             high=df['High'],
-                                             low=df['Low'],
-                                             close=df['Close'],
-                                             name='Candlestick')])
-        
-        # Add buy/sell markers
-        buys = df[df['Signal'] == 'BUY']
-        sells = df[df['Signal'] == 'SELL']
+        # Plot Candlestick
+        fig = go.Figure(data=[go.Candlestick(
+            x=analyzed_df.index,
+            open=analyzed_df['Open'],
+            high=analyzed_df['High'],
+            low=analyzed_df['Low'],
+            close=analyzed_df['Close'],
+            name='Candlestick'
+        )])
+
+        # Add Buy/Sell markers
+        buys = analyzed_df[analyzed_df['Signal'] == 'BUY']
+        sells = analyzed_df[analyzed_df['Signal'] == 'SELL']
+
         fig.add_trace(go.Scatter(x=buys.index, y=buys['Close'], mode='markers',
                                  marker=dict(symbol='triangle-up', color='green', size=10),
-                                 name='Buy Signal'))
+                                 name='BUY'))
         fig.add_trace(go.Scatter(x=sells.index, y=sells['Close'], mode='markers',
                                  marker=dict(symbol='triangle-down', color='red', size=10),
-                                 name='Sell Signal'))
+                                 name='SELL'))
 
-        fig.update_layout(title=f"{symbol} - Intraday Chart with Buy/Sell Signals",
-                          xaxis_title="Time",
-                          yaxis_title="Price",
-                          xaxis_rangeslider_visible=False)
+        fig.update_layout(title=f"{ticker} - {interval} Chart",
+                          xaxis_title="Time", yaxis_title="Price",
+                          xaxis_rangeslider_visible=False, template="plotly_dark")
 
         st.plotly_chart(fig, use_container_width=True)
-
-        # Signal table
-        signal_table = df[df['Signal'].isin(['BUY', 'SELL'])][['Signal', 'Close', 'StopLoss', 'Target']]
-        st.subheader("📋 Trade Recommendations")
-        st.dataframe(signal_table)
+        st.subheader("📋 Latest Signals")
+        st.dataframe(signals_df.tail(10))
